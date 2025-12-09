@@ -1,273 +1,240 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Fei's Magic Tree</title>
+    <title>Minimalist Xmas Tree</title>
     <style>
-        /* --- 极简黑金美学 --- */
+        /* === 极简黑金美学 === */
         body { 
             margin: 0; 
-            background-color: #000; 
+            background-color: #050505; /* 深邃黑 */
             overflow: hidden; 
-            font-family: 'Helvetica Neue', sans-serif;
-            touch-action: none; /* 禁止手机默认缩放 */
+            font-family: sans-serif;
+            touch-action: none; 
+            cursor: pointer; /* 提示可点击 */
         }
 
-        /* 提示语 (点击后消失) */
-        #hint {
+        /* 唯一的按钮：上传照片 */
+        #photo-btn {
             position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            color: #d4af37; /* 金色 */
-            font-size: 1.2rem;
-            opacity: 0.8;
-            pointer-events: none;
-            text-align: center;
-            animation: pulse 2s infinite;
-            transition: opacity 0.5s;
-        }
-
-        /* 底部极简工具栏 */
-        #toolbar {
-            position: absolute;
-            bottom: 30px;
-            left: 0; right: 0;
-            display: flex;
-            justify-content: center;
-            gap: 40px;
-            z-index: 100;
-        }
-
-        .icon-btn {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(212, 175, 55, 0.3);
-            color: #d4af37;
-            width: 50px; height: 50px;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            transition: transform 0.2s, background 0.2s;
+            background: rgba(20, 20, 20, 0.6);
+            border: 1px solid rgba(212, 175, 55, 0.5); /* 金色边框 */
+            color: #d4af37;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            z-index: 100;
+            transition: all 0.3s ease;
             outline: none;
             -webkit-tap-highlight-color: transparent;
         }
 
-        .icon-btn:active { transform: scale(0.9); background: rgba(212, 175, 55, 0.2); }
+        #photo-btn:active {
+            transform: translateX(-50%) scale(0.9);
+            background: rgba(212, 175, 55, 0.2);
+        }
 
-        @keyframes pulse { 0%{opacity:0.4} 50%{opacity:1} 100%{opacity:0.4} }
+        /* 提示文字 */
+        #hint {
+            position: absolute;
+            top: 45%;
+            left: 0; right: 0;
+            text-align: center;
+            color: #d4af37;
+            opacity: 0.6;
+            pointer-events: none;
+            font-size: 14px;
+            letter-spacing: 2px;
+            animation: fadeOut 4s forwards;
+        }
+
+        @keyframes fadeOut { 
+            0% {opacity: 0;} 
+            20% {opacity: 0.8;} 
+            80% {opacity: 0.8;} 
+            100% {opacity: 0;} 
+        }
     </style>
 </head>
 <body>
 
-    <div id="hint">Tap anywhere to transform<br><span style="font-size:0.8em">点击屏幕变换形状</span></div>
+    <div id="hint">点击屏幕切换形状<br>TAP TO TRANSFORM</div>
 
-    <div id="toolbar">
-        <button class="icon-btn" id="btnMusic">🎵</button>
-        <button class="icon-btn" id="btnPhoto">📷</button>
-    </div>
-
-    <input type="file" id="fileInput" accept="image/*" style="display:none">
-    
-    <audio id="bgm" src="https://cdn.pixabay.com/audio/2023/11/08/audio_42f3b8e665.mp3" loop></audio>
+    <button id="photo-btn">📷</button>
+    <input type="file" id="file-input" accept="image/*" style="display:none">
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        /* === 1. 初始化设置 === */
-        const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-        const particleCount = isMobile ? 800 : 2000; // 手机端减少粒子以保证流畅
+        // === 1. 初始化场景 ===
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 12; // 相机距离
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        // === 2. 粒子系统配置 ===
+        // 手机端减少粒子数以保证流畅，电脑端更多
+        const isMobile = window.innerWidth < 768;
+        const count = isMobile ? 1200 : 3000; 
         
-        let scene, camera, renderer, particles, photoMesh;
-        let isTreeMode = false; // 当前状态标记
-
-        // 启动场景
-        init();
-        animate();
-
-        function init() {
-            // 场景
-            scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x000000, 0.05); // 黑色迷雾增加深邃感
-
-            // 相机
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 10;
-            camera.position.y = 2;
-
-            // 渲染器
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            document.body.appendChild(renderer.domElement);
-
-            // 创建金色粒子
-            createParticles();
-
-            // 交互事件
-            window.addEventListener('resize', onWindowResize, false);
-            // 点击屏幕任意位置切换形状
-            document.addEventListener('click', (e) => {
-                // 如果点击的是按钮，不要切换形状
-                if(e.target.closest('button')) return;
-                toggleShape();
-            });
-        }
-
-        /* === 2. 粒子系统 === */
-        function createParticles() {
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            const targetPositions = new Float32Array(particleCount * 3); // 存储目标位置
-
-            // 初始化为“星河”散开状态
-            for (let i = 0; i < particleCount; i++) {
-                positions[i * 3] = (Math.random() - 0.5) * 20;
-                positions[i * 3 + 1] = (Math.random() - 0.5) * 20;
-                positions[i * 3 + 2] = (Math.random() - 0.5) * 10;
-            }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            // 存储一个“目标”属性用于动画过渡
-            geometry.setAttribute('target', new THREE.BufferAttribute(positions.slice(), 3));
-
-            // 金色材质
-            const material = new THREE.PointsMaterial({
-                color: 0xffd700,
-                size: isMobile ? 0.15 : 0.1,
-                transparent: true,
-                opacity: 0.8,
-                blending: THREE.AdditiveBlending
-            });
-
-            particles = new THREE.Points(geometry, material);
-            scene.add(particles);
-        }
-
-        /* === 3. 核心逻辑：切换形状 === */
-        function toggleShape() {
-            isTreeMode = !isTreeMode;
-            
-            // 隐藏提示语
-            const hint = document.getElementById('hint');
-            if(hint) hint.style.opacity = 0;
-
-            const targets = particles.geometry.attributes.target.array;
-
-            if (isTreeMode) {
-                // === 计算圣诞树形状 ===
-                for (let i = 0; i < particleCount; i++) {
-                    const i3 = i * 3;
-                    const h = i / particleCount; // 高度 0 到 1
-                    const angle = i * 0.5; // 螺旋角度
-                    const r = (1 - h) * 3.5; // 底部宽，顶部尖
-
-                    targets[i3] = Math.cos(angle) * r;     // X
-                    targets[i3 + 1] = (h * 7) - 3.5;       // Y (拉高树身)
-                    targets[i3 + 2] = Math.sin(angle) * r; // Z
-                }
-            } else {
-                // === 计算星河散开形状 ===
-                for (let i = 0; i < particleCount; i++) {
-                    const i3 = i * 3;
-                    targets[i3] = (Math.random() - 0.5) * 15;
-                    targets[i3 + 1] = (Math.random() - 0.5) * 15;
-                    targets[i3 + 2] = (Math.random() - 0.5) * 10;
-                }
-            }
-        }
-
-        /* === 4. 动画循环 === */
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // 粒子缓动动画 (Lerp)
-            const positions = particles.geometry.attributes.position.array;
-            const targets = particles.geometry.attributes.target.array;
-            
-            for (let i = 0; i < positions.length; i++) {
-                // 让当前位置慢慢接近目标位置 (0.05 是移动速度)
-                positions[i] += (targets[i] - positions[i]) * 0.05;
-            }
-            particles.geometry.attributes.position.needsUpdate = true;
-
-            // 整体缓慢旋转
-            particles.rotation.y += 0.002;
-            if(photoMesh) photoMesh.rotation.y = particles.rotation.y; // 照片跟随旋转
-
-            renderer.render(scene, camera);
-        }
-
-        /* === 5. 功能逻辑：音乐与照片 === */
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const targets = new Float32Array(count * 3); // 目标位置存储
         
-        // 音乐开关
-        const btnMusic = document.getElementById('btnMusic');
-        const bgm = document.getElementById('bgm');
-        let isPlaying = false;
-
-        btnMusic.addEventListener('click', () => {
-            if (isPlaying) {
-                bgm.pause();
-                btnMusic.textContent = "🎵";
-                btnMusic.style.background = "rgba(255,255,255,0.1)";
-            } else {
-                bgm.play();
-                btnMusic.textContent = "⏸";
-                btnMusic.style.background = "rgba(212,175,55,0.4)"; // 激活变成金色背景
-            }
-            isPlaying = !isPlaying;
+        // 初始化为“散开”状态
+        for(let i=0; i<count; i++) {
+            positions[i*3] = (Math.random()-0.5) * 25;
+            positions[i*3+1] = (Math.random()-0.5) * 25;
+            positions[i*3+2] = (Math.random()-0.5) * 15;
+        }
+        
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        
+        // 金色材质
+        const material = new THREE.PointsMaterial({
+            color: 0xffd700,
+            size: isMobile ? 0.18 : 0.12,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
         });
 
-        // 照片上传
-        const btnPhoto = document.getElementById('btnPhoto');
-        const fileInput = document.getElementById('fileInput');
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
 
-        btnPhoto.addEventListener('click', () => fileInput.click());
+        // === 3. 交互逻辑 ===
+        let isTree = false;
+        let photoMesh = null;
 
-        fileInput.addEventListener('change', (e) => {
+        // 计算不同形状的目标位置
+        function calculateTargets() {
+            if(isTree) {
+                // 圣诞树形状
+                for(let i=0; i<count; i++) {
+                    const i3 = i*3;
+                    const h = i/count; // 0 到 1
+                    const angle = i * 0.5; 
+                    const r = (1-h) * 4.5; // 半径
+
+                    targets[i3] = Math.cos(angle) * r;
+                    targets[i3+1] = (h * 9) - 4.5; // 高度拉伸
+                    targets[i3+2] = Math.sin(angle) * r;
+                }
+            } else {
+                // 星空散开形状
+                for(let i=0; i<count; i++) {
+                    const i3 = i*3;
+                    targets[i3] = (Math.random()-0.5) * 25;
+                    targets[i3+1] = (Math.random()-0.5) * 25;
+                    targets[i3+2] = (Math.random()-0.5) * 15;
+                }
+            }
+        }
+        
+        // 初始目标
+        calculateTargets();
+
+        // 点击屏幕切换 (排除按钮点击)
+        document.addEventListener('click', (e) => {
+            if(e.target.id === 'photo-btn' || e.target.id === 'file-input') return;
+            isTree = !isTree;
+            calculateTargets();
+        });
+
+        // === 4. 照片上传功能 ===
+        const btn = document.getElementById('photo-btn');
+        const input = document.getElementById('file-input');
+
+        btn.addEventListener('click', () => input.click());
+
+        input.addEventListener('change', (e) => {
             const file = e.target.files[0];
-            if (!file) return;
+            if(!file) return;
 
             const reader = new FileReader();
             reader.onload = (event) => {
                 const img = new Image();
                 img.src = event.target.result;
                 img.onload = () => {
-                    createPhotoInScene(img);
+                    // 移除旧照片
+                    if(photoMesh) scene.remove(photoMesh);
+                    
+                    // 创建新照片
+                    const tex = new THREE.TextureLoader().load(img.src);
+                    const aspect = img.width / img.height;
+                    // 限制最大宽度，防止照片过大
+                    const w = 5; 
+                    const h = w / aspect;
+                    
+                    const mat = new THREE.MeshBasicMaterial({ 
+                        map: tex, 
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.95
+                    });
+                    const geo = new THREE.PlaneGeometry(w, h);
+                    
+                    photoMesh = new THREE.Mesh(geo, mat);
+                    scene.add(photoMesh);
+                    
+                    // 上传后自动变成树形包裹照片
+                    if(!isTree) {
+                        isTree = true;
+                        calculateTargets();
+                    }
                 };
             };
             reader.readAsDataURL(file);
         });
 
-        function createPhotoInScene(imageElement) {
-            // 如果已有照片，先移除
-            if (photoMesh) scene.remove(photoMesh);
+        // === 5. 动画循环 ===
+        function animate() {
+            requestAnimationFrame(animate);
 
-            const texture = new THREE.TextureLoader().load(imageElement.src);
-            // 保持宽高比，固定高度为 4
-            const aspect = imageElement.width / imageElement.height;
-            const geometry = new THREE.PlaneGeometry(4 * aspect, 4);
+            const pos = particles.geometry.attributes.position.array;
             
-            const material = new THREE.MeshBasicMaterial({ 
-                map: texture, 
-                side: THREE.DoubleSide, 
-                transparent: true,
-                opacity: 0.9 
-            });
+            // 粒子移动插值 (Lerp)
+            for(let i=0; i<count*3; i++) {
+                pos[i] += (targets[i] - pos[i]) * 0.06; // 0.06 是聚合速度
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
 
-            photoMesh = new THREE.Mesh(geometry, material);
-            scene.add(photoMesh);
-            
-            // 切换到树模式以包围照片
-            if(!isTreeMode) toggleShape();
+            // 整体旋转
+            const time = Date.now() * 0.0005;
+            scene.rotation.y = time * 0.5; // 缓慢自转
+
+            // 让照片始终面向相机 (Billboard效果)
+            if(photoMesh) {
+                photoMesh.rotation.y = -scene.rotation.y; 
+            }
+
+            renderer.render(scene, camera);
         }
 
-        function onWindowResize() {
+        animate();
+
+        // 窗口调整
+        window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        });
+
     </script>
 </body>
 </html>
